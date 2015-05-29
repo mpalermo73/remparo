@@ -1,0 +1,4 @@
+#!/bin/sh
+
+service remparo updatebl > /dev/null 2>&1
+service remparo updateua > /dev/null 2>&1

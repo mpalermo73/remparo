@@ -1,0 +1,63 @@
+
+[DEFAULT]
+ignoreip = 127.0.0.1/8 192.0.2.0/24 100.64.0.0/10 50.200.184.54/32 23.23.198.254/32 54.174.40.175/32 4.34.195.66/32 209.255.199.9/32
+
+# forever
+#bantime  = -1
+
+# 1 day
+#bantime  = 86400
+
+# 1 week
+bantime  = 604800
+
+findtime = 7200
+maxretry = 10
+backend  = auto
+usedns   = yes
+
+[asterisk-useragent]
+enabled  = true
+filter   = asterisk-useragent
+action   = iptables-multiport[name=UserAgent, port=5060, protocol=udp]
+logpath  = /var/log/messages
+maxretry = 1
+
+[asterisk-invite]
+enabled  = true
+filter   = asterisk-invite-flood
+action   = iptables-multiport[name=InviteFlood, port=5060, protocol=udp]
+logpath  = /var/log/messages
+
+[asterisk-register]
+enabled  = true
+filter   = asterisk-register-flood
+action   = iptables-multiport[name=RegisterFlood, port=5060, protocol=udp]
+logpath  = /var/log/messages
+
+[ssh-iptables]
+enabled  = true
+filter   = sshd
+action   = iptables-multiport[name=SSH, port=ssh, protocol=tcp]
+logpath  = /var/log/secure
+
+[asterisk-udp]
+enabled  = true
+filter   = asterisk
+action   = iptables-multiport[name=asterisk-udp, port="5060,5061", protocol=udp]
+logpath  = /var/log/asterisk/full
+#maxretry = 10
+
+[asterisk-custom]
+enabled  = true
+filter   = asterisk-custom
+action   = iptables-multiport[name=asterisk-custom, port="5060,5061", protocol=udp]
+logpath  = /var/log/asterisk/full
+#maxretry = 10
+
+#[asterisk-tcp]
+#enabled  = true
+#filter   = asterisk
+#action   = iptables-multiport[name=asterisk-tcp, port="5060,5061", protocol=tcp]
+#logpath  = /var/log/asterisk/full
+#maxretry = 10

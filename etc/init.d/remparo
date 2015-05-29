@@ -1,0 +1,396 @@
+#!/bin/sh
+#
+# remparo	Start up script for iptables rules to protect Asterisk
+#
+# chkconfig: - 85 15
+# description: These are a set of iptables rules that will protect Asterisk from \
+#		various floods and scans.  It can work alone, but, is designed to \
+#		woirk in tandum with fail2ban."
+# processname: iptables-asterisk-service
+# config: /etc/voneto/remparo-main.cfg
+# pidfile: /var/run/remparo.pid
+#
+### BEGIN INIT INFO
+# Provides: remparo
+# Required-Start: $local_fs $remote_fs $network $named
+# Required-Stop: $local_fs $remote_fs $network
+# Should-Start: 
+# Should-Stop: 
+# Default-Start: 3 4 5
+# Default-Stop: 0 1 2 6
+# Short-Description: start and stop Remparo iptables rules
+# Description: Remparo iuptables rules to protect Asterisk
+### END INIT INFO
+
+# Source function library.
+# . /etc/rc.d/init.d/functions
+
+# fail2ban-client status
+# fail2ban-client set [JAIL] unbanip [IP]
+
+URL="http://nagios.voneto.com/remparo"
+CFG_DIR="/etc/voneto/"
+
+
+
+##########################################
+ ##                                    ##
+  ##                                  ##
+   ##  Don't touch from here down!!  ##
+  ##                                  ##
+ ##                                    ##
+##########################################
+
+
+
+###########################
+# GET SYSTEM VARS
+function SystemVars() {
+
+	echo
+
+	CFG_MAIN="remparo-main.cfg"
+	CFG_SZ="remparo-sz.cfg"
+	CFG_UA="remparo-ua.cfg"
+	CFG_BL="remparo-bl.cfg"
+
+	if [ ! -f ${CFG_DIR}/${CFG_MAIN} ] ; then
+#		curl -R -# "${URL}/${CFG_MAIN}" > ${CFG_DIR}/${CFG_MAIN}
+		wget -nv "${URL}/${CFG_MAIN}" -O ${CFG_DIR}/${CFG_MAIN}
+		source ${CFG_DIR}/${CFG_MAIN}
+	else
+		source ${CFG_DIR}/${CFG_MAIN}
+	fi
+
+
+	if [ -f ${CFG_DIR}/${CFG_SZ} ] ; then
+		source ${CFG_DIR}/${CFG_SZ}
+	else
+#		curl -R -# "${URL}/${CFG_SZ}" > ${CFG_DIR}/${CFG_SZ}
+		wget -nv "${URL}/${CFG_SZ}" -O ${CFG_DIR}/${CFG_SZ}
+		source ${CFG_DIR}/${CFG_SZ}
+	fi
+
+
+	if [ -f ${CFG_DIR}/${CFG_UA} ] ; then
+		source ${CFG_DIR}/${CFG_UA}
+	else
+#		curl -R -# "${URL}/${CFG_UA}" > ${CFG_DIR}/${CFG_UA}
+		wget -nv "${URL}/${CFG_UA}" -O ${CFG_DIR}/${CFG_UA}
+		source ${CFG_DIR}/${CFG_UA}
+	fi
+
+
+	if [ -f ${CFG_DIR}/${CFG_BL} ] ; then
+		source ${CFG_DIR}/${CFG_BL}
+	else
+#		curl -R -# "${URL}/${CFG_BL}" > ${CFG_DIR}/${CFG_BL}
+		wget -nv "${URL}/${CFG_BL}" -O ${CFG_DIR}/${CFG_BL}
+		source ${CFG_DIR}/${CFG_BL}
+	fi
+
+
+	[ "${NIC}" ] && NIC_IN="-i ${NIC}"
+
+
+	###########################
+	# UPDATED CONFIG CHECK
+
+	if [ ! ${ENABLE_USERAGENTS} ] ; then
+		ENABLE_USERAGENTS="yes"
+		echo "ENABLE_USERAGENTS=\"yes\"" >> ${CFG_DIR}/${CFG_MAIN}
+	fi
+
+	if [ ! ${ENABLE_INVITES} ] ; then
+		ENABLE_INVITES="yes"
+		echo "ENABLE_INVITES=\"yes\"" >> ${CFG_DIR}/${CFG_MAIN}
+	fi
+
+	if [ ! ${ENABLE_REGISTERS} ] ; then
+		ENABLE_REGISTERS="yes"
+		echo "ENABLE_REGISTERS=\"yes\"" >> ${CFG_DIR}/${CFG_MAIN}
+	fi
+	###########################
+}
+
+
+###########################
+# UPDATE LISTS
+function UpdateLists() {
+
+	case $1 in
+		updatebl)
+			echo -e \\v"UPDATING BLACKLIST:"
+#			curl -R -# "${URL}/${CFG_BL}" > ${CFG_DIR}/${CFG_BL}
+			wget -nv "${URL}/${CFG_BL}" -O ${CFG_DIR}/${CFG_BL}
+			;;
+
+		updateua)
+			echo -e \\v"UPDATING USERAGENT LIST: "
+#			curl -R -# "${URL}/remparo-ua.txt" > ${CFG_DIR}/${CFG_UA}
+			wget -nv "${URL}/${CFG_UA}" -O ${CFG_DIR}/${CFG_UA}
+			;;
+		*)
+			echo \\vDUNNO\\v
+			exit
+			;;
+
+	esac
+}
+
+
+###########################
+# CHAIN UP
+function ChainUp() {
+
+	SystemVars
+
+	##################
+	# DROP EXISTING
+	[ "$(iptables -n -L | grep ${CHAIN_I})" ] && ChainDown
+	[ "$(iptables -n -L | grep ${CHAIN_R})" ] && ChainDown
+	[ "$(iptables -n -L | grep ${CHAIN_U})" ] && ChainDown
+	[ "$(iptables -n -L | grep ${CHAIN_B})" ] && ChainDown
+	[ "$(iptables -n -L | grep ${CHAIN_S})" ] && ChainDown
+
+
+	##################
+	# SAFEZONE
+	if [ "${DO_SAFEZONE}" == "yes" ] ; then
+
+		SZ_COUNT=$(echo ${SAFE_ZONE} | wc -w)
+		if [ ${SZ_COUNT} -eq 1 ] ; then S="" ; else S="s" ; fi
+
+		echo -e "Adding ${CHAIN_S}:\\n\\t - ${SZ_COUNT} addresse${S}"
+
+		iptables -N ${CHAIN_S}
+		iptables -A ${CHAIN_S} -j RETURN
+
+		iptables -I INPUT 1 -s 0/0 -j ${CHAIN_S}
+
+		for IP in ${SAFE_ZONE} ; do
+			iptables -I ${CHAIN_S} 1 ${NIC_IN} -s ${IP} -j ACCEPT
+		done
+	fi
+
+
+	##################
+	# BLACKLIST
+	if [ ${DO_BLACKLIST} == "yes" ] ; then
+		iptables -N ${CHAIN_B}
+		iptables -A ${CHAIN_B} -j LOG --log-prefix "${LOG_B}: "
+# 		iptables -A ${CHAIN_B} -j DROP
+#		iptables -A ${CHAIN_B} -j RETURN
+
+		echo "Adding ${CHAIN_B}:"
+
+		for IP in ${BLACKLIST} ; do
+			echo -e "\\t - ${IP}"
+			iptables -I INPUT 1 ${NIC_IN} -s ${IP} -j ${CHAIN_B}
+		done
+	fi
+
+
+	##################
+	# USERAGENTS
+	if [ ${ENABLE_USERAGENTS} == "yes" ] ; then
+		iptables -N ${CHAIN_U}
+		iptables -I ${CHAIN_U} 1 -j LOG --log-prefix "${LOG_U}: "
+
+		echo "Adding ${CHAIN_U}:"
+
+		for UA in ${USER_AGENTS} ; do
+			echo -e "\\t - ${UA}"
+			iptables -A INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "User-Agent: ${UA}" --algo bm --to 65535 -j ${CHAIN_U}
+		done
+	fi
+
+
+	##################
+	# INVITES
+	if [ ${ENABLE_INVITES} == "yes" ] ; then
+		echo -e "Adding ${CHAIN_I}:\\n\\t - Invite Ceiling: ${PER_SEC_I}"
+		iptables -N ${CHAIN_I}
+		iptables -I ${CHAIN_I} 1 -j LOG --log-prefix "${LOG_I}: "
+		iptables -A INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "INVITE sip:" --algo bm -m recent --set --name VOIPINV --rsource
+		iptables -A INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "INVITE sip:" --algo bm -m recent --update --seconds 1 --hitcount ${PER_SEC_I} --rttl --name VOIPINV --rsource -j ${CHAIN_I}
+	fi
+
+
+	##################
+	# REGISTERS
+	if [ ${ENABLE_REGISTERS} == "yes" ] ; then
+		echo -e "Adding ${CHAIN_R}:\\n\\t - Register Ceiling: ${PER_SEC_R}"
+		iptables -N ${CHAIN_R}
+		iptables -I ${CHAIN_R} 1 -j LOG --log-prefix "${LOG_R}: "
+		iptables -A INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "REGISTER sip:" --algo bm -m recent --set --name VOIPREG --rsource
+		iptables -A INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "REGISTER sip:" --algo bm -m recent --update --seconds 1 --hitcount ${PER_SEC_R} --rttl --name VOIPREG --rsource -j ${CHAIN_R}
+	fi
+
+
+	##################
+	# DROPS
+	case ${DO_DROP} in
+		[yY][eE][sS])
+			[ ${ENABLE_INVITES} == "yes" ] && iptables -A ${CHAIN_I} -j DROP
+			[ ${ENABLE_REGISTERS} == "yes" ] && iptables -A ${CHAIN_R} -j DROP
+			[ ${ENABLE_USERAGENTS} == "yes" ] && iptables -A ${CHAIN_U} -j DROP
+			[ ${DO_BLACKLIST} == "yes" ] && iptables -A ${CHAIN_B} -j DROP
+			;;
+
+		[nN][oO])
+			echo "Only logging..."
+			;;
+
+		*)	echo "\"DO_DROP\" bad value: ${DO_DROP}"
+			ChainDown
+			exit
+			;;
+	esac
+
+	echo
+}
+
+
+###########################
+# CHAIN DOWN
+function ChainDown() {
+
+	SystemVars
+
+
+	if [ "$(iptables -L ${CHAIN_S} 2> /dev/null | wc -l)" -gt 0 ] ; then
+
+		SZ_COUNT=$(echo ${SAFE_ZONE} | wc -w)
+		if [ ${SZ_COUNT} -eq 1 ] ; then S="" ; else S="s" ; fi
+
+		echo -e "Removing: ${CHAIN_S}\\n\\t - ${SZ_COUNT} addresse${S}"
+
+		iptables -D INPUT ${NIC_IN} -s 0/0 -j ${CHAIN_S}
+
+		iptables -F ${CHAIN_S}
+		iptables -X ${CHAIN_S}
+
+		unset IP
+	fi
+
+
+	if [ "$(iptables -n -L INPUT | grep ${CHAIN_B})" ] ; then
+
+		echo "Removing: ${CHAIN_B}"
+
+		for IP in $(iptables -n -L INPUT | grep ${CHAIN_B} | awk '{print $4}') ; do
+			iptables -D INPUT ${NIC_IN} -s ${IP} -j ${CHAIN_B}
+			echo -e "\\t - ${IP}"
+		done
+
+		iptables -F ${CHAIN_B}
+		iptables -X ${CHAIN_B}
+
+		unset IP
+	fi
+
+
+	if [ "$(iptables -L ${CHAIN_U} 2> /dev/null | wc -l)" -gt 0 ] ; then
+
+		echo "Removing: ${CHAIN_U}"
+
+		if [ "$(iptables -n -L INPUT | grep ${CHAIN_U})" ] ; then
+			for UA in $(iptables -n -L INPUT | grep ${CHAIN_U} | sed 's/.*User-Agent: \(.*\)" ALGO.*/\1/') ; do
+				iptables -D INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "User-Agent: ${UA}" --algo bm --to 65535 -j ${CHAIN_U}
+				echo -e "\\t - ${UA}"
+			done
+		fi
+
+		iptables -F ${CHAIN_U}
+		iptables -X ${CHAIN_U}
+
+		unset UA
+	fi
+
+
+	if [ "$(iptables -L ${CHAIN_R} 2> /dev/null | wc -l)" -gt 0 ] ; then
+
+		echo "Removing: ${CHAIN_R}"
+
+		iptables -D INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "REGISTER sip:" --algo bm -m recent --set --name VOIPREG --rsource
+		iptables -D INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "REGISTER sip:" --algo bm -m recent --update --seconds 1 --hitcount ${PER_SEC_R} --rttl --name VOIPREG --rsource -j ${CHAIN_R}
+
+		iptables -F ${CHAIN_R}
+		iptables -X ${CHAIN_R}
+	fi
+
+	if [ "$(iptables -L ${CHAIN_I} 2> /dev/null | wc -l)" -gt 0 ] ; then
+
+		echo "Removing: ${CHAIN_I}"
+
+		iptables -D INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "INVITE sip:" --algo bm -m recent --set --name VOIPINV --rsource
+		iptables -D INPUT ${NIC_IN} -p udp -m udp --dport 5060 -m string --string "INVITE sip:" --algo bm -m recent --update --seconds 1 --hitcount ${PER_SEC_I} --rttl --name VOIPINV --rsource -j ${CHAIN_I}
+
+		iptables -F ${CHAIN_I}
+		iptables -X ${CHAIN_I}
+	fi
+}
+
+
+#touch $0
+
+[ ! -d ${CFG_DIR} ] && mkdir ${CFG_DIR}
+
+case $1 in
+	up)
+		ChainUp
+		exit
+		;;
+
+	start)
+		ChainUp
+		exit
+		;;
+
+	down)
+		ChainDown
+		exit
+		;;
+
+	stop)
+		ChainDown
+		exit
+		;;
+
+	restart)
+		ChainDown
+		echo -e "\\n---------"
+		ChainUp
+		exit
+		;;
+
+	updatebl)
+		ChainDown
+		UpdateLists $1
+		ChainUp
+		;;
+
+	updateua)
+		ChainDown
+		UpdateLists $1
+		ChainUp
+		;;
+
+	status)
+		iptables -n -L
+		;;
+
+	*)
+		echo -e "\\vNeed action:\\n"
+		echo -e "        up - Bring chains up"
+		echo -e "      down - Flush and delete chains"
+		echo -e "   restart - Run \"down\" then \"up\""
+		echo -e "    status - iptables -n -L"
+		echo -e "  updatebl - Update blacklist list and reload"
+		echo -e "  updateua - Update useragent list and reload"
+		echo
+		exit 1
+		;;
+esac
+

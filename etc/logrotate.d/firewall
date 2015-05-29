@@ -1,0 +1,8 @@
+/var/log/firewall.log {
+	missingok
+	notifempty
+	compress
+	dateext
+	create 0644 root root
+}
+

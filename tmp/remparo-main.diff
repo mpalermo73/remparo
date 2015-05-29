@@ -1,0 +1,15 @@
+--- remparo-main.old	2015-03-13 10:04:56.878074413 -0400
++++ remparo-main.cfg	2015-03-13 10:04:41.040169390 -0400
+@@ -1,4 +1,12 @@
+ ###########################
++# Enable/Disable Parts
++ENABLE_USERAGENTS="yes"
++ENABLE_INVITES="yes"
++ENABLE_REGISTERS="yes"
++###########################
++
++
++###########################
+ # Interface to use.
+ # Comment this out to use ALL interfaces
+ #
